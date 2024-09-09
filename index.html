@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Drawing Page with Lockable Ruler, Rotation Slider, and Manual Input</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+            overflow: auto;
+            font-size: 9px; /* Reduce base font size */
+        }
+        #save-button {
+            position: fixed;
+            top: 5px;
+            right: 5px;
+            font-size: 24px;
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+        #app-container {
+            display: flex;
+            gap: 10px;
+            flex-direction: column;
+            justify-content: flex-start;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        #canvas-container {
+            position: relative;
+            border: 1px solid black;
+            background-color: white;
+        }
+
+        #drawing-canvas {
+            display: block;
+        }
+
+        #ruler {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 600px; 
+            height: 40px;
+            background-color: rgba(200, 200, 200, 0.4);
+            cursor: move;
+            border: 1px solid #000;
+        }
+        .ruler-mark {
+            position: absolute;
+            top: 0;
+            width: 1px;
+            height: 15px;
+            background-color: #000;
+        }
+        .ruler-text {
+            position: absolute;
+            top: 20px;
+            font-size: 10px;
+            transform: translateX(-50%);
+            user-select: none;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        }
+        #controls {
+            position: fixed;
+            top: 5px;
+            left: 5px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 5px;
+            border-radius: 3px;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 1px;
+            margin-bottom: 5px;
+        }
+        #brush-size-control input, #ruler-rotation {
+            width: 100px;
+        }
+        #ruler-lock {
+            cursor: pointer;
+        }
+        #rotation-input {
+            width: 40px;
+            font-size: 9px;
+        }
+        label {
+            font-size: 9px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="control-group" id="brush-size-control">
+            <label for="brush-size">Brush Size:</label>
+            <input type="range" id="brush-size" min="1" max="20" value="1">
+            <span id="brush-size-value">1px</span>
+        </div>
+        <div class="control-group" id="color-picker-control">
+            <label for="color-picker">Brush Color:</label>
+            <input type="color" id="color-picker" value="#808080">
+        </div>
+        <div class="control-group" id="ruler-controls">
+            <label for="ruler-lock">Lock Ruler:</label>
+            <input type="checkbox" id="ruler-lock">
+        </div>
+        <div class="control-group" id="ruler-rotation-control">
+            <label for="ruler-rotation">Rotate:</label>
+            <input type="range" id="ruler-rotation" min="-360" max="360" value="0">
+            <input type="number" id="rotation-input" min="-360" max="360" value="0">
+            
+        </div>
+    </div>
+
+    <button id="save-button" title="Save as JPG">📷</button>
+    <div id="app-container">
+        <div id="canvas-container">
+            <canvas id="drawing-canvas"></canvas>
+            <div id="ruler"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/interact.js/1.10.11/interact.min.js"></script>
+    <script>
+
+        const rulerLock = document.getElementById('ruler-lock');
+
+        rulerLock.addEventListener('change', function() {
+            setRulerLock(this.checked);
+        });
+
+        const canvas = document.getElementById('drawing-canvas');
+        const ctx = canvas.getContext('2d');
+        const ruler = document.getElementById('ruler');
+        const brushSizeInput = document.getElementById('brush-size');
+        const brushSizeValue = document.getElementById('brush-size-value');
+        const colorPicker = document.getElementById('color-picker');
+        const canvasContainer = document.getElementById('canvas-container');
+        
+        const rulerRotation = document.getElementById('ruler-rotation');
+        const rotationInput = document.getElementById('rotation-input');
+
+        // Calculate canvas size based on ruler
+        const pixelsPerCm = 600 / 20; // 30px per cm
+        canvas.width = Math.round(21 * pixelsPerCm); // A4 width: 21cm
+        canvas.height = Math.round(29.7 * pixelsPerCm); // A4 height: 29.7cm
+        canvasContainer.style.width = `${canvas.width}px`;
+        canvasContainer.style.height = `${canvas.height}px`;
+
+        let isDrawing = false;
+        let isDrawingStraightLine = false;
+        let lastX = 0;
+        let lastY = 0;
+        let startX = 0;
+        let startY = 0;
+        let lineThickness = 1;
+        let lineColor = '#808080';
+        let isShiftPressed = false;
+        let drawDirection = null;
+        let canvasState = null;
+        let undoStack = [];
+        let redoStack = [];
+        let isRulerLocked = false;
+        let isMouseDown = false;
+        // Initialize ruler
+        for (let i = 1; i < 20; i++) {
+            const mark = document.createElement('div');
+            mark.className = 'ruler-mark';
+            mark.style.left = `${i * pixelsPerCm}px`;
+            ruler.appendChild(mark);
+
+            const text = document.createElement('div');
+            text.className = 'ruler-text';
+            text.style.left = `${i * pixelsPerCm}px`;
+            text.textContent = i;
+            ruler.appendChild(text);
+        }
+        // Position ruler near top left
+        updateRulerPosition(20, 20, 0);
+
+        // Make ruler draggable and rotatable
+        let rulerInteraction = interact(ruler).draggable({
+            listeners: {
+                move(event) {
+                    const target = event.target;
+                    const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+                    const y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+                    updateRulerPosition(x, y);
+                }
+            }
+        });
+
+        function updateRulerPosition(x, y, angle) {
+            angle = angle !== undefined ? angle : (parseFloat(ruler.getAttribute('data-angle')) || 0);
+            ruler.style.transform = `translate(${x}px, ${y}px) rotate(${angle}deg)`;
+            ruler.setAttribute('data-x', x);
+            ruler.setAttribute('data-y', y);
+            ruler.setAttribute('data-angle', angle);
+        }
+
+        // Drawing functionality
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+        canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // Prevent context menu on right-click
+
+        // Add these new event listeners
+        document.addEventListener('mousedown', function(e) {
+            isMouseDown = true;
+            if (!ruler.contains(e.target)) {
+                setRulerLock(true);
+            }
+        });
+
+        document.addEventListener('mouseup', function() {
+            isMouseDown = false;
+            setRulerLock(false);
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Shift') {
+                isShiftPressed = true;
+            }
+            if (e.ctrlKey && e.key === 'z') {
+                e.preventDefault();
+                undo();
+            }
+            if (e.ctrlKey && e.key === 'y') {
+                e.preventDefault();
+                redo();
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            if (e.key === 'Shift') {
+                isShiftPressed = false;
+            }
+        });
+
+        function startDrawing(e) {
+            saveCanvasState();
+            if (e.button === 2) { // Right mouse button
+                isDrawingStraightLine = true;
+                canvasState = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            } else {
+                isDrawing = true;
+            }
+            [startX, startY] = [e.offsetX, e.offsetY];
+            [lastX, lastY] = [e.offsetX, e.offsetY];
+            drawDirection = null;
+        }
+
+        function draw(e) {
+            if (!isDrawing && !isDrawingStraightLine) return;
+
+            if (isDrawingStraightLine) {
+                // For straight line drawing (right-click)
+                ctx.putImageData(canvasState, 0, 0);
+                ctx.beginPath();
+                ctx.moveTo(startX, startY);
+                ctx.lineTo(e.offsetX, e.offsetY);
+                ctx.strokeStyle = lineColor;
+                ctx.lineWidth = lineThickness;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            } else {
+                // For freehand drawing (left-click)
+                ctx.beginPath();
+                ctx.moveTo(lastX, lastY);
+
+                if (isShiftPressed) {
+                    const dx = Math.abs(e.offsetX - lastX);
+                    const dy = Math.abs(e.offsetY - lastY);
+                    if (dx > dy) {
+                        ctx.lineTo(e.offsetX, lastY);
+                    } else {
+                        ctx.lineTo(lastX, e.offsetY);
+                    }
+                } else {
+                    ctx.lineTo(e.offsetX, e.offsetY);
+                }
+
+                ctx.strokeStyle = lineColor;
+                ctx.lineWidth = lineThickness;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+
+                if (!isShiftPressed) {
+                    [lastX, lastY] = [e.offsetX, e.offsetY];
+                }
+            }
+        }
+
+        function stopDrawing() {
+            if (isDrawing || isDrawingStraightLine) {
+                saveCanvasState();
+            }
+            isDrawing = false;
+            isDrawingStraightLine = false;
+            drawDirection = null;
+            canvasState = null;
+        }
+
+        function saveCanvasState() {
+            undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+                if (undoStack.length > 100) {
+                    undoStack.shift(); // Remove the oldest state if more than 100steps
+                }
+                redoStack = [];
+        }
+
+        function undo() {
+            if (undoStack.length > 1) {
+                redoStack.push(undoStack.pop());
+                ctx.putImageData(undoStack[undoStack.length - 1], 0, 0);
+            }
+        }
+
+        function redo() {
+            if (redoStack.length > 0) {
+                const state = redoStack.pop();
+                undoStack.push(state);
+                ctx.putImageData(state, 0, 0);
+            }
+        }
+
+        // Brush size control
+        brushSizeInput.addEventListener('input', function() {
+            lineThickness = this.value;
+            brushSizeValue.textContent = `${this.value}px`;
+        });
+
+        // Color picker control
+        colorPicker.addEventListener('input', function() {
+            lineColor = this.value;
+        });
+
+
+        // Add these new functions
+        function setRulerLock(locked) {
+            isRulerLocked = locked;
+            rulerLock.checked = locked;
+            if (isRulerLocked) {
+                rulerInteraction.unset();
+                ruler.style.pointerEvents = 'none';
+            } else {
+                rulerInteraction = interact(ruler).draggable({
+                    listeners: {
+                        move(event) {
+                            const target = event.target;
+                            const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+                            const y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+                            updateRulerPosition(x, y);
+                        }
+                    }
+                });
+                ruler.style.pointerEvents = 'auto';
+            }
+        }
+
+        // Ruler rotation control
+        function updateRotation(angle) {
+            angle = Math.min(360, Math.max(-360, angle)); // Clamp between -360 and 360
+            rulerRotation.value = angle;
+            rotationInput.value = angle;
+            const x = parseFloat(ruler.getAttribute('data-x')) || 0;
+            const y = parseFloat(ruler.getAttribute('data-y')) || 0;
+            updateRulerPosition(x, y, angle);
+        }
+
+        rulerRotation.addEventListener('input', function() {
+            updateRotation(parseInt(this.value));
+        });
+
+        rotationInput.addEventListener('input', function() {
+            updateRotation(parseInt(this.value));
+        });
+
+        // Initialize canvas state
+        saveCanvasState();
+
+
+        let currentRotation = 0;
+        
+        const rotationAngles = [-180, -150, -135, -90, -45, -30, 0, 30, 45, 90, 135, 150, 180];
+        // Add this near the top of your script, with other event listeners
+        document.addEventListener('contextmenu', function(e) {
+            e.preventDefault();
+        });
+
+        function getClosestRotation(current) {
+            return rotationAngles.reduce((prev, curr) => 
+                Math.abs(curr - current) < Math.abs(prev - current) ? curr : prev
+            );
+        }
+
+
+        function cycleRotation() {
+            const closestAngle = getClosestRotation(currentRotation);
+            let nextIndex = rotationAngles.indexOf(closestAngle) + 1;
+            if (nextIndex >= rotationAngles.length) {
+                nextIndex = 0;
+            }
+            currentRotation = rotationAngles[nextIndex];
+            updateRotation(currentRotation);
+        }
+        ruler.addEventListener('mousedown', function(e) {
+            e.stopPropagation(); // Prevent the document mousedown from firing for all mouse buttons
+
+            if (e.button === 2 && !isRulerLocked) { // Right mouse button and ruler is not locked
+                e.preventDefault(); // Prevent the default right-click menu
+                cycleRotation();
+            }
+        });
+
+        // Modify the existing updateRotation function
+        function updateRotation(angle) {
+            angle = Math.min(360, Math.max(-360, angle)); // Clamp between -360 and 360
+            currentRotation = angle; // Update the current rotation
+            rulerRotation.value = angle;
+            rotationInput.value = angle;
+            const x = parseFloat(ruler.getAttribute('data-x')) || 0;
+            const y = parseFloat(ruler.getAttribute('data-y')) || 0;
+            updateRulerPosition(x, y, angle);
+        }
+        const saveButton = document.getElementById('save-button');
+        saveButton.addEventListener('click', saveAsJpg);
+
+        function saveAsJpg() {
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            // Draw the main canvas content
+            tempCtx.drawImage(canvas, 0, 0);
+
+            // Draw the ruler
+            tempCtx.save();
+            const rulerRect = ruler.getBoundingClientRect();
+            const canvasRect = canvas.getBoundingClientRect();
+            const x = rulerRect.left - canvasRect.left;
+            const y = rulerRect.top - canvasRect.top;
+            tempCtx.translate(x + rulerRect.width / 2, y + rulerRect.height / 2);
+            tempCtx.rotate(currentRotation * Math.PI / 180);
+            tempCtx.translate(-(x + rulerRect.width / 2), -(y + rulerRect.height / 2));
+            tempCtx.fillStyle = 'rgba(200, 200, 200, 0.4)';
+            tempCtx.fillRect(x, y, rulerRect.width, rulerRect.height);
+            tempCtx.strokeStyle = '#000';
+            tempCtx.strokeRect(x, y, rulerRect.width, rulerRect.height);
+
+            // Draw ruler markings
+            tempCtx.fillStyle = '#000';
+            tempCtx.font = '10px Arial';
+            for (let i = 1; i < 20; i++) {
+                const markX = x + i * (rulerRect.width / 20);
+                tempCtx.fillRect(markX, y, 1, 15);
+                tempCtx.fillText(i.toString(), markX, y + 25);
+            }
+            tempCtx.restore();
+
+            // Convert to JPG and trigger download
+            tempCanvas.toBlob((blob) => {
+                const link = document.createElement('a');
+                link.download = 'drawing.jpg';
+                link.href = URL.createObjectURL(blob);
+                link.click();
+                URL.revokeObjectURL(link.href);
+            }, 'image/jpeg', 0.95);
+        }
+    </script>
+</body>
+</html>
