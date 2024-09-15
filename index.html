@@ -2,7 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Interactive Drawing Page with Lockable Ruler, Rotation Slider, and Manual Input</title>
     <style>
         body {
@@ -10,7 +9,7 @@
             padding: 10px;
             background-color: #f0f0f0;
             overflow: auto;
-            font-size: 9px; /* Reduce base font size */
+            font-size: 9px;
         }
         #save-button {
             position: fixed;
@@ -36,6 +35,13 @@
             background-color: white;
         }
 
+        #canvas-container.oblique {
+            background-image:
+                linear-gradient(0deg, rgba(173, 216, 230, 0.5) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(173, 216, 230, 0.5) 1px, transparent 1px),
+                linear-gradient(135deg, transparent, transparent 14px, rgba(173, 216, 230, 0.5) 1px, transparent 15px, transparent);
+            background-size: 20px 20px;
+        }
         #drawing-canvas {
             display: block;
         }
@@ -44,7 +50,7 @@
             position: absolute;
             top: 20px;
             left: 20px;
-            width: 600px; 
+            width: 600px;
             height: 40px;
             background-color: rgba(200, 200, 200, 0.4);
             cursor: move;
@@ -63,9 +69,9 @@
             font-size: 10px;
             transform: translateX(-50%);
             user-select: none;
-        -webkit-user-select: none;
-        -moz-user-select: none;
-        -ms-user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
         }
         #controls {
             position: fixed;
@@ -116,7 +122,10 @@
             <label for="ruler-rotation">Rotate:</label>
             <input type="range" id="ruler-rotation" min="-360" max="360" value="0">
             <input type="number" id="rotation-input" min="-360" max="360" value="0">
-            
+        </div>
+        <div class="control-group" id="oblique-control">
+            <label for="oblique-checkbox">Oblique grid:</label>
+            <input type="checkbox" id="oblique-checkbox">
         </div>
     </div>
 
@@ -147,6 +156,15 @@
         
         const rulerRotation = document.getElementById('ruler-rotation');
         const rotationInput = document.getElementById('rotation-input');
+
+        const obliqueCheckbox = document.getElementById('oblique-checkbox');
+        obliqueCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                canvasContainer.classList.add('oblique');
+            } else {
+                canvasContainer.classList.remove('oblique');
+            }
+        });
 
         // Calculate canvas size based on ruler
         const pixelsPerCm = 600 / 20; // 30px per cm
@@ -313,7 +331,7 @@
         function saveCanvasState() {
             undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
                 if (undoStack.length > 100) {
-                    undoStack.shift(); // Remove the oldest state if more than 100steps
+                    undoStack.shift(); // Remove the oldest state if more than 100 steps
                 }
                 redoStack = [];
         }
@@ -370,6 +388,7 @@
         // Ruler rotation control
         function updateRotation(angle) {
             angle = Math.min(360, Math.max(-360, angle)); // Clamp between -360 and 360
+            currentRotation = angle; // Update the current rotation
             rulerRotation.value = angle;
             rotationInput.value = angle;
             const x = parseFloat(ruler.getAttribute('data-x')) || 0;
@@ -392,7 +411,7 @@
         let currentRotation = 0;
         
         const rotationAngles = [-180, -150, -135, -90, -45, -30, 0, 30, 45, 90, 135, 150, 180];
-        // Add this near the top of your script, with other event listeners
+
         document.addEventListener('contextmenu', function(e) {
             e.preventDefault();
         });
@@ -422,16 +441,6 @@
             }
         });
 
-        // Modify the existing updateRotation function
-        function updateRotation(angle) {
-            angle = Math.min(360, Math.max(-360, angle)); // Clamp between -360 and 360
-            currentRotation = angle; // Update the current rotation
-            rulerRotation.value = angle;
-            rotationInput.value = angle;
-            const x = parseFloat(ruler.getAttribute('data-x')) || 0;
-            const y = parseFloat(ruler.getAttribute('data-y')) || 0;
-            updateRulerPosition(x, y, angle);
-        }
         const saveButton = document.getElementById('save-button');
         saveButton.addEventListener('click', saveAsJpg);
 
