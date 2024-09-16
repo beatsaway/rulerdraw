@@ -486,6 +486,143 @@
                 URL.revokeObjectURL(link.href);
             }, 'image/jpeg', 0.95);
         }
+
+        class Protractor {
+        constructor(x = 100, y = 100) {
+            this.createProtractor(x, y);
+            this.addEventListeners();
+        }
+
+        createProtractor(x, y) {
+            this.protractor = document.createElement('div');
+            this.protractor.id = 'protractor';
+            this.protractor.style.cssText = `
+                position: absolute;
+                left: ${x}px;
+                top: ${y}px;
+                width: 400px;
+                height: 200px;
+                border-radius: 200px 200px 0 0;
+                border: 2px solid black;
+                border-bottom: none;
+                background-color: rgba(255, 255, 255, 0.8);
+                overflow: hidden;
+                cursor: move;
+            `;
+
+            document.body.appendChild(this.protractor);
+
+            const style = document.createElement('style');
+            style.textContent = `
+                .proline {
+                    position: absolute;
+                    top: 0;
+                    left: 200px;
+                    width: 1px;
+                    height: 200px;
+                    background-color: #999;
+                    transform-origin: bottom center;
+                }
+                .proline.promajor {
+                    background-color: #333;
+                }
+                .pronumber {
+                    position: absolute;
+                    font-size: 10px;
+                    transform-origin: center;
+                    text-align: center;
+                    pointer-events: none;
+                    user-select: none;
+                }
+                .proouter { color: blue; }
+                .proinner { color: green; }
+            `;
+            document.head.appendChild(style);
+
+            this.createLinesAndNumbers();
+        }
+
+        createLinesAndNumbers() {
+            for (let i = 0; i <= 360; i += 5) {
+                const isMajor = i % 10 === 0;
+                this.protractor.appendChild(this.createLine(i, isMajor));
+                
+                if (i % 10 === 0 && i <= 180) {
+                    this.protractor.appendChild(this.createNumber(i, true));
+                    this.protractor.appendChild(this.createNumber(i, false));
+                }
+            }
+        }
+
+        createNumber(angle, isOuter) {
+            const number = document.createElement('div');
+            number.className = `pronumber ${isOuter ? 'proouter' : 'proinner'}`;
+            const radius = isOuter ? 185 : 165;
+            const radians = (angle * Math.PI) / 180;
+            const x = 200 + radius * Math.cos(radians);
+            const y = 200 - radius * Math.sin(radians);
+            number.style.left = `${x - 12}px`;
+            number.style.top = `${y - 12}px`;
+            number.style.width = '24px';
+            number.style.height = '24px';
+            number.style.lineHeight = '24px';
+            number.textContent = isOuter ? 180 - angle : angle;
+            return number;
+        }
+
+        createLine(angle, isMajor) {
+            const line = document.createElement('div');
+            line.className = `proline ${isMajor ? 'promajor' : ''}`;
+            line.style.transform = `rotate(${angle}deg)`;
+            return line;
+        }
+
+        addEventListeners() {
+            let isDragging = false;
+            let startX, startY;
+
+            this.protractor.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                startX = e.clientX - this.protractor.offsetLeft;
+                startY = e.clientY - this.protractor.offsetTop;
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (isDragging) {
+                    this.protractor.style.left = `${e.clientX - startX}px`;
+                    this.protractor.style.top = `${e.clientY - startY}px`;
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            // Touch events for mobile devices
+            this.protractor.addEventListener('touchstart', (e) => {
+                isDragging = true;
+                startX = e.touches[0].clientX - this.protractor.offsetLeft;
+                startY = e.touches[0].clientY - this.protractor.offsetTop;
+            });
+
+            document.addEventListener('touchmove', (e) => {
+                if (isDragging) {
+                    e.preventDefault();
+                    this.protractor.style.left = `${e.touches[0].clientX - startX}px`;
+                    this.protractor.style.top = `${e.touches[0].clientY - startY}px`;
+                }
+            });
+
+            document.addEventListener('touchend', () => {
+                isDragging = false;
+            });
+        }
+    }
+
+    // Create a protractor when the page loads
+    window.addEventListener('load', () => {
+        new Protractor(110, 110);
+    });
     </script>
 </body>
 </html>
