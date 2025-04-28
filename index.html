@@ -638,17 +638,43 @@
         new Protractor(110, 110);
     });
 
+    // Track mouse movements to detect dragging
+    let isDraggingAnything = false;
+    let mouseDownPosition = { x: 0, y: 0 };
+    
+    document.addEventListener('mousedown', (e) => {
+        mouseDownPosition.x = e.clientX;
+        mouseDownPosition.y = e.clientY;
+        isDraggingAnything = false;
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        // If mouse has moved more than 5 pixels in any direction, consider it a drag
+        if (!isDraggingAnything && 
+            (Math.abs(e.clientX - mouseDownPosition.x) > 5 || 
+             Math.abs(e.clientY - mouseDownPosition.y) > 5)) {
+            isDraggingAnything = true;
+        }
+    });
+    
     // Function to handle clicks outside the canvas and create pencil emoji
     function createPencilEmoji(e) {
-        // Check if click is outside canvas but not on controls or save button
+        // Don't create emoji if user was dragging
+        if (isDraggingAnything) {
+            return;
+        }
+        
+        // Check if click is outside canvas but not on controls or other UI elements
         const controlsEl = document.getElementById('controls');
         const saveButtonEl = document.getElementById('save-button');
         const protractorEl = document.getElementById('protractor');
+        const rulerEl = document.getElementById('ruler');
         
-        // Don't show pencil if click is on canvas, controls, save button, or protractor
+        // Don't show pencil if click is on canvas, controls, save button, ruler, or protractor
         if (canvas.contains(e.target) || 
             controlsEl.contains(e.target) || 
             saveButtonEl === e.target || 
+            rulerEl.contains(e.target) ||
             (protractorEl && protractorEl.contains(e.target))) {
             return;
         }
@@ -672,7 +698,13 @@
     }
 
     // Add event listener for clicks on the document
-    document.addEventListener('click', createPencilEmoji);
+    document.addEventListener('mouseup', (e) => {
+        // Only process click events (not drag end events)
+        if (e.button === 0) { // Left mouse button
+            createPencilEmoji(e);
+        }
+        isDraggingAnything = false;
+    });
     </script>
 </body>
 </html>
